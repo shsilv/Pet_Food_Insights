@@ -222,4 +222,4 @@ View the interactive dashboard [Feeding the Market: Insights into Pet Food & Tre
 * Encourage customer reviews to boost credibility and visibility.
 ---
 #### Link to full R code: 
-Access the code [here](
+Access the code [here](https://github.com/shsilv/Pet_Food_Insights/blob/main/R%20Code).
