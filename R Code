@@ -1,0 +1,219 @@
+# ===============================
+# Petsmart Food & Treats Analysis
+# ===============================
+
+# Load libraries
+library(tidyverse)
+library(readr)
+library(lubridate)
+library(scales)
+library(ggtext)    # for rendering cleaned text in plots
+library(patchwork)
+
+# -------------------------------
+# Load Data
+# -------------------------------
+petsmart <- read.csv("petsmart_store_data.csv")
+
+# Quick look
+head(petsmart)
+summary(petsmart)
+glimpse(petsmart)
+
+# -------------------------------
+# Clean Data
+# -------------------------------
+petsmart <- petsmart %>%
+  mutate(price = as.numeric(gsub("[$,]", "", price))) %>%
+  filter(!is.na(price))
+
+petsmart_food <- petsmart %>%
+  filter(grepl("cat|dog", tolower(name)) & 
+           grepl("food|treat|kibble|chew|snack", tolower(name)))
+
+# -------------------------------
+# Clean HTML entities in brand/product names
+# -------------------------------
+petsmart_food <- petsmart_food %>%
+  mutate(
+    brand = str_replace_all(brand, "&amp;", "&"),
+    brand = str_replace_all(brand, "&trade;", "™"),
+    brand = str_replace_all(brand, "&reg;", "®"),
+    name = str_replace_all(name, "&amp;", "&"),
+    name = str_replace_all(name, "&trade;", "™"),
+    name = str_replace_all(name, "&reg;", "®")
+  )
+
+# Export cleaned data for Tableau
+write.csv(petsmart_food,"petsmart_food_clean.csv", row.names = FALSE)
+
+# -------------------------------
+# Visualization Colors
+# -------------------------------
+main_color <- "#4F091D"        # primary burgundy
+secondary_color <- "#867F71"   # secondary gray/taupe for category differentiation
+
+# -------------------------------
+# Visualizations
+# -------------------------------
+
+## Histogram of Prices
+ggplot(petsmart_food, aes(x = price)) +
+  geom_histogram(fill = main_color, bins = 30) +
+  scale_x_log10(labels = dollar_format()) +
+  labs(
+    title = "Distribution of Pet Food & Treat Prices",
+    x = "Price (log scale)",
+    y = "Count"
+  ) +
+  theme_minimal()
+
+## Top Brands by Product Count
+top_brands <- petsmart_food %>%
+  count(brand, sort = TRUE) %>%
+  top_n(10)
+
+ggplot(top_brands, aes(x = reorder(brand, n), y = n)) +
+  geom_col(fill = main_color) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Brands for Cat & Dog Food/Treats",
+    x = "Brand",
+    y = "Number of Products"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_markdown())
+
+## Price vs Average Rating
+ggplot(petsmart_food, aes(x = price, y = avg_rating)) +
+  geom_point(alpha = 0.6, color = main_color) +
+  scale_x_log10(labels = dollar_format()) +
+  labs(
+    title = "Price vs. Average Rating for Cat & Dog Food/Treats",
+    x = "Price (log scale)",
+    y = "Average Rating"
+  ) +
+  theme_minimal()
+
+## Top 10 Most Expensive Products
+top_expensive <- petsmart_food %>%
+  arrange(desc(price)) %>%
+  slice_head(n = 10)
+
+ggplot(top_expensive, aes(x = reorder(name, price), y = price)) +
+  geom_col(fill = main_color) +
+  coord_flip() +
+  scale_y_continuous(labels = scales::dollar_format()) +
+  labs(title = "Top 10 Most Expensive Cat & Dog Food/Treats",
+       x = "Product", y = "Price") +
+  theme_minimal() +
+  theme(axis.text.y = element_markdown())
+
+## Top 10 Most Reviewed Products
+top_reviewed <- petsmart_food %>%
+  arrange(desc(reviews_count)) %>%
+  slice_head(n = 10)
+
+ggplot(top_reviewed, aes(x = reorder(name, reviews_count), y = reviews_count)) +
+  geom_col(fill = main_color) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Most Reviewed Cat & Dog Food/Treats",
+    x = "Product",
+    y = "Number of Reviews"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_markdown())
+
+## Average Rating by Brand (Top 10 Brands with >=5 products)
+brand_ratings <- petsmart_food %>%
+  group_by(brand) %>%
+  filter(n() >= 5) %>%
+  summarise(avg_rating = mean(avg_rating, na.rm = TRUE)) %>%
+  arrange(desc(avg_rating)) %>%
+  slice_head(n = 10)
+
+ggplot(brand_ratings, aes(x = reorder(brand, avg_rating), y = avg_rating)) +
+  geom_col(fill = main_color) +
+  coord_flip() +
+  labs(
+    title = "Top 10 Brands by Average Rating",
+    x = "Brand",
+    y = "Average Rating"
+  ) +
+  theme_minimal() +
+  theme(axis.text.y = element_markdown())
+
+# -------------------------------
+# Category-Level Trends
+# -------------------------------
+petsmart_food <- petsmart_food %>%
+  mutate(category_type = case_when(
+    grepl("treat|chew|snack", tolower(name)) ~ "Treats",
+    grepl("food|kibble", tolower(name)) ~ "Food",
+    TRUE ~ "Other"
+  ))
+
+category_summary <- petsmart_food %>%
+  group_by(category_type) %>%
+  summarise(
+    avg_price = mean(price, na.rm = TRUE),
+    avg_rating = mean(avg_rating, na.rm = TRUE),
+    total_products = n()
+  )
+
+# Average Price by Category
+ggplot(category_summary, aes(x = category_type, y = avg_price, fill = category_type)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_manual(values = c(main_color, secondary_color, secondary_color)) +
+  labs(title = "Average Price by Category Type",
+       x = "Category",
+       y = "Average Price ($)") +
+  theme_minimal()
+
+# Average Rating by Category
+ggplot(category_summary, aes(x = category_type, y = avg_rating, fill = category_type)) +
+  geom_col(show.legend = FALSE) +
+  scale_fill_manual(values = c(main_color, secondary_color, secondary_color)) +
+  labs(title = "Average Rating by Category Type",
+       x = "Category",
+       y = "Average Rating (out of 5)") +
+  theme_minimal()
+
+# -------------------------------
+# Scatter Plot Matrix
+# -------------------------------
+p1 <- ggplot(petsmart_food, aes(x = price, y = avg_rating)) +
+  geom_point(alpha = 0.6, color = main_color) +
+  scale_x_log10(labels = dollar_format()) +
+  labs(title = "Price vs Average Rating",
+       x = "Price (log scale)",
+       y = "Average Rating") +
+  theme_minimal()
+
+p2 <- ggplot(petsmart_food, aes(x = price, y = as.numeric(reviews_count))) +
+  geom_point(alpha = 0.6, color = main_color) +
+  scale_x_log10(labels = dollar_format()) +
+  labs(title = "Price vs Number of Reviews",
+       x = "Price (log scale)",
+       y = "Number of Reviews") +
+  theme_minimal()
+
+p3 <- ggplot(petsmart_food, aes(x = as.numeric(reviews_count), y = avg_rating)) +
+  geom_point(alpha = 0.6, color = main_color) +
+  labs(title = "Reviews Count vs Average Rating",
+       x = "Number of Reviews",
+       y = "Average Rating") +
+  theme_minimal()
+
+combined_plot <- p1 / p2 / p3
+combined_plot
+
+
+# export clean CSV
+write.csv(petsmart_food, "petsmart_food_clean.csv", row.names = FALSE)
+
+# final check for remaining encodings
+petsmart_food %>%
+  filter(str_detect(name, "&|;")) %>%
+  distinct(name)
